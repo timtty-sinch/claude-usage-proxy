@@ -97,7 +97,7 @@ class Dashboard(App):
     def on_mount(self) -> None:
         table = self.query_one("#requests-table", DataTable)
         table.add_columns("Time", "Model", "S", "In", "Out", "$ Cost", "ms")
-        self._load_data()
+        self.call_after_refresh(self._load_data)
         self.set_interval(2.0, self._load_data)
 
     def on_resize(self) -> None:
