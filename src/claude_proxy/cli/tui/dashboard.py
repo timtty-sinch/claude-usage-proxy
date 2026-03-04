@@ -3,6 +3,7 @@
 from datetime import timezone
 
 import plotext as plt
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Grid, Vertical
 from textual.widgets import DataTable, Footer, Header, Static
@@ -47,7 +48,7 @@ class ChartWidget(Static):
         if w < 10 or h < 4:
             return
         rendered = _build_bar_chart(self._title, data, w, h)
-        self.update(rendered)
+        self.update(Text.from_ansi(rendered))
 
 
 class Dashboard(App):
