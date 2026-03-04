@@ -1,18 +1,28 @@
 """Textual live dashboard for Claude usage monitoring."""
 
 from datetime import timezone
+from typing import Literal
 
 from textual_plotext import PlotextPlot
 from textual.app import App, ComposeResult
 from textual.containers import Grid, Vertical
-from textual.widgets import DataTable, Footer, Header
+from textual.widgets import ContentSwitcher, DataTable, Footer, Header, Tab, Tabs
 
 from claude_proxy.db.engine import SyncSessionLocal
 from claude_proxy.db.repository import cost_over_period, list_requests
 
+ChartType = Literal["bar", "scatter", "line"]
+
+_PERIODS = [
+    ("Cost — last 1h",  1,   12),
+    ("Cost — last 4h",  4,   12),
+    ("Cost — last 2d",  48,  12),
+    ("Cost — last 5d",  120, 12),
+]
+
 
 class CostChart(PlotextPlot):
-    """Bar chart showing cost bucketed over a time window."""
+    """Plots cost over a time window using bar, scatter, or line."""
 
     DEFAULT_CSS = """
     CostChart {
@@ -20,11 +30,13 @@ class CostChart(PlotextPlot):
     }
     """
 
-    def __init__(self, title: str, hours: float, buckets: int, **kwargs):
+    def __init__(self, title: str, hours: float, buckets: int,
+                 chart_type: ChartType = "bar", **kwargs):
         super().__init__(**kwargs)
         self._title = title
         self._hours = hours
         self._buckets = buckets
+        self._chart_type = chart_type
 
     def replot(self) -> None:
         with SyncSessionLocal() as session:
@@ -32,7 +44,12 @@ class CostChart(PlotextPlot):
         labels = [b["label"] for b in data]
         values = [b["cost"] for b in data]
         self.plt.clear_data()
-        self.plt.bar(labels, values)
+        if self._chart_type == "bar":
+            self.plt.bar(labels, values)
+        elif self._chart_type == "scatter":
+            self.plt.scatter(labels, values)
+        else:
+            self.plt.plot(labels, values)
         self.plt.title(self._title)
         self.plt.ylabel("$ cost")
         self.refresh()
@@ -41,8 +58,18 @@ class CostChart(PlotextPlot):
         self.replot()
 
 
+def _chart_grid(chart_type: ChartType, grid_id: str) -> Grid:
+    return Grid(
+        CostChart("Cost — last 1h",  hours=1,   buckets=12, chart_type=chart_type, id=f"{grid_id}-1h"),
+        CostChart("Cost — last 4h",  hours=4,   buckets=12, chart_type=chart_type, id=f"{grid_id}-4h"),
+        CostChart("Cost — last 2d",  hours=48,  buckets=12, chart_type=chart_type, id=f"{grid_id}-2d"),
+        CostChart("Cost — last 5d",  hours=120, buckets=12, chart_type=chart_type, id=f"{grid_id}-5d"),
+        id=grid_id,
+    )
+
+
 class Dashboard(App):
-    """Live dashboard: top empty, center 4 bar charts, bottom request log."""
+    """Live dashboard: top empty, center tabbed charts, bottom request log."""
 
     TITLE = "Claude Usage Proxy — Dashboard"
     CSS = """
@@ -56,7 +83,10 @@ class Dashboard(App):
     #center-pane {
         height: 50%;
     }
-    #chart-grid {
+    ContentSwitcher {
+        height: 1fr;
+    }
+    Grid {
         layout: grid;
         grid-size: 2 2;
         height: 100%;
@@ -76,11 +106,15 @@ class Dashboard(App):
         yield Header()
         yield Vertical(id="top-pane")
         with Vertical(id="center-pane"):
-            with Grid(id="chart-grid"):
-                yield CostChart("Cost — last 1h",  hours=1,   buckets=12, id="chart-1h")
-                yield CostChart("Cost — last 4h",  hours=4,   buckets=12, id="chart-4h")
-                yield CostChart("Cost — last 2d",  hours=48,  buckets=12, id="chart-2d")
-                yield CostChart("Cost — last 5d",  hours=120, buckets=12, id="chart-5d")
+            yield Tabs(
+                Tab("Bar charts",     id="tab-bar"),
+                Tab("Scatter charts", id="tab-scatter"),
+                Tab("Line charts",    id="tab-line"),
+            )
+            with ContentSwitcher(initial="tab-bar"):
+                yield _chart_grid("bar",     "tab-bar")
+                yield _chart_grid("scatter", "tab-scatter")
+                yield _chart_grid("line",    "tab-line")
         with Vertical(id="bottom-pane"):
             yield DataTable(id="requests-table")
         yield Footer()
@@ -91,9 +125,16 @@ class Dashboard(App):
         self._load_requests()
         self.set_interval(2.0, self._refresh_all)
 
+    def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
+        if event.tab:
+            self.query_one(ContentSwitcher).current = event.tab.id
+
     def _refresh_all(self) -> None:
-        for chart in self.query(CostChart):
-            chart.replot()
+        switcher = self.query_one(ContentSwitcher)
+        active_grid = switcher.current
+        if active_grid:
+            for chart in self.query(f"#{active_grid} CostChart"):
+                chart.replot()
         self._load_requests()
 
     def _load_requests(self) -> None:
