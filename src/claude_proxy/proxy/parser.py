@@ -1,5 +1,6 @@
 """Parse request and response bodies for Claude API calls."""
 
+import json
 from typing import Any
 
 
@@ -32,11 +33,15 @@ def extract_request_info(body: dict[str, Any]) -> dict[str, Any]:
                         break
             break
 
+    messages = body.get("messages")
+    messages_json = json.dumps(messages) if messages is not None else None
+
     return {
         "model": body.get("model", "unknown"),
         "is_streaming": bool(body.get("stream", False)),
         "system_prompt_preview": system_preview,
         "first_user_message_preview": first_user_preview,
+        "messages_json": messages_json,
     }
 
 

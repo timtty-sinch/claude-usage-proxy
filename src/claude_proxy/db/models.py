@@ -25,6 +25,7 @@ class ApiRequest(Base):
     http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    messages_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     usage: Mapped["ApiUsage | None"] = relationship(
         "ApiUsage", back_populates="request", cascade="all, delete-orphan", uselist=False

@@ -130,6 +130,7 @@ def export_all(session: Session) -> list[dict[str, Any]]:
                 "stop_reason": req.stop_reason,
                 "system_prompt_preview": req.system_prompt_preview,
                 "first_user_message_preview": req.first_user_message_preview,
+                "messages_json": req.messages_json,
                 "http_status": req.http_status,
                 "error_type": req.error_type,
                 "error_message": req.error_message,
