@@ -108,6 +108,44 @@ def today_cost_by_model(session: Session) -> list[dict[str, Any]]:
     ]
 
 
+def cost_over_period(
+    session: Session,
+    hours: float,
+    buckets: int,
+) -> list[dict[str, Any]]:
+    """
+    Return `buckets` evenly-spaced time buckets covering the last `hours` hours,
+    each with a label and the total cost in that bucket.
+    """
+    now = datetime.now(tz=timezone.utc)
+    since = now - timedelta(hours=hours)
+    bucket_size = timedelta(hours=hours) / buckets
+
+    stmt = (
+        select(ApiRequest.requested_at, ApiUsage.total_cost_usd)
+        .join(ApiUsage, ApiUsage.request_id == ApiRequest.id)
+        .where(ApiRequest.requested_at >= since)
+    )
+    rows = session.execute(stmt).all()
+
+    totals = [0.0] * buckets
+    for requested_at, cost in rows:
+        if requested_at.tzinfo is None:
+            requested_at = requested_at.replace(tzinfo=timezone.utc)
+        idx = int((requested_at - since) / bucket_size)
+        idx = min(idx, buckets - 1)
+        totals[idx] += cost or 0.0
+
+    def _label(i: int) -> str:
+        bucket_start = since + bucket_size * i
+        if hours <= 24:
+            return bucket_start.strftime("%H:%M")
+        else:
+            return bucket_start.strftime("%m-%d %H:%M")
+
+    return [{"label": _label(i), "cost": totals[i]} for i in range(buckets)]
+
+
 def export_all(session: Session) -> list[dict[str, Any]]:
     stmt = (
         select(ApiRequest, ApiUsage)
