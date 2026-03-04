@@ -2,35 +2,21 @@
 
 from datetime import timezone
 
-import plotext as plt
-from rich.text import Text
+from textual_plotext import PlotextPlot
 from textual.app import App, ComposeResult
 from textual.containers import Grid, Vertical
-from textual.widgets import DataTable, Footer, Header, Static
+from textual.widgets import DataTable, Footer, Header
 
 from claude_proxy.db.engine import SyncSessionLocal
 from claude_proxy.db.repository import cost_over_period, list_requests
 
 
-def _build_bar_chart(title: str, buckets: list[dict], width: int, height: int) -> str:
-    labels = [b["label"] for b in buckets]
-    values = [b["cost"] for b in buckets]
-    plt.clf()
-    plt.plotsize(width, height)
-    plt.bar(labels, values)
-    plt.title(title)
-    plt.xlabel("")
-    plt.ylabel("$ cost")
-    return plt.build()
-
-
-class ChartWidget(Static):
-    """A Static widget that renders a plotext bar chart."""
+class CostChart(PlotextPlot):
+    """Bar chart showing cost bucketed over a time window."""
 
     DEFAULT_CSS = """
-    ChartWidget {
+    CostChart {
         border: solid $primary-darken-2;
-        overflow: hidden;
     }
     """
 
@@ -40,15 +26,19 @@ class ChartWidget(Static):
         self._hours = hours
         self._buckets = buckets
 
-    def refresh_chart(self) -> None:
+    def replot(self) -> None:
         with SyncSessionLocal() as session:
             data = cost_over_period(session, self._hours, self._buckets)
-        w = self.size.width - 2   # subtract border
-        h = self.size.height - 2
-        if w < 10 or h < 4:
-            return
-        rendered = _build_bar_chart(self._title, data, w, h)
-        self.update(Text.from_ansi(rendered))
+        labels = [b["label"] for b in data]
+        values = [b["cost"] for b in data]
+        self.plt.clear_data()
+        self.plt.bar(labels, values)
+        self.plt.title(self._title)
+        self.plt.ylabel("$ cost")
+        self.refresh()
+
+    def on_mount(self) -> None:
+        self.replot()
 
 
 class Dashboard(App):
@@ -87,10 +77,10 @@ class Dashboard(App):
         yield Vertical(id="top-pane")
         with Vertical(id="center-pane"):
             with Grid(id="chart-grid"):
-                yield ChartWidget("Cost — last 1h",  hours=1,   buckets=12, id="chart-1h")
-                yield ChartWidget("Cost — last 4h",  hours=4,   buckets=12, id="chart-4h")
-                yield ChartWidget("Cost — last 2d",  hours=48,  buckets=12, id="chart-2d")
-                yield ChartWidget("Cost — last 5d",  hours=120, buckets=12, id="chart-5d")
+                yield CostChart("Cost — last 1h",  hours=1,   buckets=12, id="chart-1h")
+                yield CostChart("Cost — last 4h",  hours=4,   buckets=12, id="chart-4h")
+                yield CostChart("Cost — last 2d",  hours=48,  buckets=12, id="chart-2d")
+                yield CostChart("Cost — last 5d",  hours=120, buckets=12, id="chart-5d")
         with Vertical(id="bottom-pane"):
             yield DataTable(id="requests-table")
         yield Footer()
@@ -98,19 +88,15 @@ class Dashboard(App):
     def on_mount(self) -> None:
         table = self.query_one("#requests-table", DataTable)
         table.add_columns("Time", "Model", "S", "In", "Out", "$ Cost", "ms")
-        self.call_after_refresh(self._load_data)
-        self.set_interval(2.0, self._load_data)
+        self._load_requests()
+        self.set_interval(2.0, self._refresh_all)
 
-    def on_resize(self) -> None:
-        self._refresh_charts()
+    def _refresh_all(self) -> None:
+        for chart in self.query(CostChart):
+            chart.replot()
+        self._load_requests()
 
-    def _refresh_charts(self) -> None:
-        for chart in self.query(ChartWidget):
-            chart.refresh_chart()
-
-    def _load_data(self) -> None:
-        self._refresh_charts()
-
+    def _load_requests(self) -> None:
         with SyncSessionLocal() as session:
             recent = list_requests(session, limit=100)
 
@@ -135,4 +121,4 @@ class Dashboard(App):
             table.add_row("—", "—", "—", "—", "—", "—", "—")
 
     def action_refresh(self) -> None:
-        self._load_data()
+        self._refresh_all()

@@ -19,6 +19,7 @@ dependencies = [
     "textual>=1.0.0",
     "pydantic-settings>=2.6.0",
     "plotext>=5.2.0",
+    "textual-plotext>=0.2.0",
 ]
 
 [project.optional-dependencies]
