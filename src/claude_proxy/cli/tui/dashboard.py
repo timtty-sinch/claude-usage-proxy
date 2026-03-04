@@ -43,13 +43,15 @@ class CostChart(PlotextPlot):
             data = cost_over_period(session, self._hours, self._buckets)
         labels = [b["label"] for b in data]
         values = [b["cost"] for b in data]
+        x = list(range(len(labels)))
         self.plt.clear_data()
         if self._chart_type == "bar":
-            self.plt.bar(labels, values)
+            self.plt.bar(x, values)
         elif self._chart_type == "scatter":
-            self.plt.scatter(labels, values)
+            self.plt.scatter(x, values)
         else:
-            self.plt.plot(labels, values)
+            self.plt.plot(x, values)
+        self.plt.xticks(x, labels)
         self.plt.title(self._title)
         self.plt.ylabel("$ cost")
         self.refresh()
