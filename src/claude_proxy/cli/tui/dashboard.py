@@ -62,10 +62,10 @@ class CostChart(PlotextPlot):
 
 def _chart_grid(chart_type: ChartType, grid_id: str) -> Grid:
     return Grid(
-        CostChart("Cost — last 1h",  hours=1,   buckets=12, chart_type=chart_type, id=f"{grid_id}-1h"),
-        CostChart("Cost — last 4h",  hours=4,   buckets=12, chart_type=chart_type, id=f"{grid_id}-4h"),
-        CostChart("Cost — last 2d",  hours=48,  buckets=12, chart_type=chart_type, id=f"{grid_id}-2d"),
-        CostChart("Cost — last 5d",  hours=120, buckets=12, chart_type=chart_type, id=f"{grid_id}-5d"),
+        CostChart("Cost — last 15m", hours=0.25, buckets=15, chart_type=chart_type, id=f"{grid_id}-15m"),
+        CostChart("Cost — last 30m", hours=0.5,  buckets=15, chart_type=chart_type, id=f"{grid_id}-30m"),
+        CostChart("Cost — last 3h",  hours=3,    buckets=12, chart_type=chart_type, id=f"{grid_id}-3h"),
+        CostChart("Cost — last 3d",  hours=72,   buckets=12, chart_type=chart_type, id=f"{grid_id}-3d"),
         id=grid_id,
     )
 
@@ -117,6 +117,7 @@ class Dashboard(App):
                 yield _chart_grid("bar",     "tab-bar")
                 yield _chart_grid("scatter", "tab-scatter")
                 yield _chart_grid("line",    "tab-line")
+
         with Vertical(id="bottom-pane"):
             yield DataTable(id="requests-table")
         yield Footer()
