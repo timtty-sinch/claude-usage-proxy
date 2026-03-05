@@ -5,8 +5,10 @@ from typing import Literal
 
 from textual_plotext import PlotextPlot
 from textual.app import App, ComposeResult
+from textual.command import Hit, Hits, Provider
 from textual.containers import Grid, Horizontal, Vertical
-from textual.widgets import ContentSwitcher, DataTable, Footer, Header, Tab, Tabs
+from textual.screen import ModalScreen
+from textual.widgets import Button, Checkbox, ContentSwitcher, DataTable, Footer, Header, Label, Tab, Tabs
 
 from claude_proxy.db.engine import SyncSessionLocal
 from claude_proxy.db.repository import (
@@ -144,10 +146,95 @@ def _chart_grid(chart_type: ChartType, grid_id: str) -> Grid:
     )
 
 
+ALERT_ITEMS: list[tuple[str, str]] = [
+    ("cost_spike",     "Cost spike: 5-min spend > 3× rolling average"),
+    ("high_request",   "Single request cost exceeds threshold"),
+    ("daily_budget",   "Daily spend exceeds budget limit"),
+    ("request_rate",   "Request rate spike in last minute"),
+]
+
+
+class AlertConfigModal(ModalScreen[dict[str, bool]]):
+    """Popup dialog for enabling/disabling alert notifications."""
+
+    DEFAULT_CSS = """
+    AlertConfigModal {
+        align: center middle;
+    }
+    AlertConfigModal > Vertical {
+        width: 64;
+        height: auto;
+        border: solid $primary;
+        background: $surface;
+        padding: 1 2;
+    }
+    AlertConfigModal #modal-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    AlertConfigModal Checkbox {
+        margin-bottom: 0;
+    }
+    AlertConfigModal Button {
+        margin-top: 1;
+        width: 100%;
+    }
+    """
+
+    BINDINGS = [("escape", "close_modal", "Close")]
+
+    def __init__(self, enabled: dict[str, bool]) -> None:
+        super().__init__()
+        self._enabled = enabled
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("Alert Notifications", id="modal-title")
+            for alert_id, label in ALERT_ITEMS:
+                yield Checkbox(label, value=self._enabled.get(alert_id, False), id=alert_id)
+            yield Button("Close", variant="primary", id="close-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "close-btn":
+            self._save_and_dismiss()
+
+    def action_close_modal(self) -> None:
+        self._save_and_dismiss()
+
+    def _save_and_dismiss(self) -> None:
+        result = {
+            alert_id: self.query_one(f"#{alert_id}", Checkbox).value
+            for alert_id, _ in ALERT_ITEMS
+        }
+        self.dismiss(result)
+
+
+class DashboardCommandProvider(Provider):
+    """Command palette provider for the dashboard. Commands will be added here."""
+
+    async def search(self, query: str) -> Hits:
+        matcher = self.matcher(query)
+        score = matcher.match("Configure alert notifications")
+        if score > 0:
+            yield Hit(
+                score,
+                matcher.highlight("Configure alert notifications"),
+                self._open_alert_config,
+                help="Enable or disable notification alerts",
+            )
+
+    async def _open_alert_config(self) -> None:
+        app: Dashboard = self.app  # type: ignore[assignment]
+        await app.push_screen(AlertConfigModal(dict(app.alert_enabled)), app._on_alert_config)
+
+
 class Dashboard(App):
     """Live dashboard: top split (complexity chart + empty), center tabbed cost charts, bottom requests."""
 
     TITLE = "Claude Usage Proxy — Dashboard"
+    COMMANDS = App.COMMANDS | {DashboardCommandProvider}
+
+    alert_enabled: dict[str, bool] = {alert_id: False for alert_id, _ in ALERT_ITEMS}
     CSS = """
     Screen {
         layout: vertical;
@@ -248,6 +335,10 @@ class Dashboard(App):
             )
         if not recent:
             table.add_row("—", "—", "—", "—", "—", "—", "—", "—")
+
+    def _on_alert_config(self, result: dict[str, bool] | None) -> None:
+        if result is not None:
+            self.alert_enabled = result
 
     def action_refresh(self) -> None:
         self._load_data()
