@@ -308,15 +308,15 @@ class Dashboard(App):
     }
     #top-pane {
         height: 30%;
-        layout: horizontal;
+        layout: vertical;
     }
     #complexity-pane {
-        width: 1fr;
-        height: 100%;
+        width: 100%;
+        height: 1fr;
     }
     #top-right-pane {
-        width: 1fr;
-        height: 100%;
+        width: 100%;
+        height: 1fr;
     }
     #center-pane {
         height: 50%;
@@ -342,7 +342,7 @@ class Dashboard(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Horizontal(id="top-pane"):
+        with Vertical(id="top-pane"):
             yield ComplexityChart(id="complexity-pane")
             yield ToolAcceptanceChart(id="top-right-pane")
         with Vertical(id="center-pane"):
