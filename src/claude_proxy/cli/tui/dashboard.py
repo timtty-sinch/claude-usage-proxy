@@ -27,7 +27,7 @@ _MODEL_COLORS = ["cyan", "magenta", "green", "yellow", "blue", "red", "white", "
 
 
 class ComplexityChart(PlotextPlot):
-    """Horizontal stacked bar chart: Y=complexity tier, stacked by model."""
+    """Vertical stacked bar chart: X=complexity tier, stacked by model."""
 
     DEFAULT_CSS = """
     ComplexityChart {
@@ -59,14 +59,14 @@ class ComplexityChart(PlotextPlot):
 
         series = [[data[tier].get(m, 0) for tier in tiers] for m in all_models]
         colors = [_MODEL_COLORS[i % len(_MODEL_COLORS)] for i in range(len(all_models))]
-        self.plt.stacked_bar(tiers, series, labels=all_models, orientation="h", color=colors)
+        self.plt.stacked_bar(tiers, series, labels=all_models, orientation="v", color=colors)
         self.plt.title("Complexity by model (last 24h)")
-        self.plt.xlabel("requests")
+        self.plt.ylabel("requests")
         self.refresh()
 
 
 class ToolAcceptanceChart(PlotextPlot):
-    """Horizontal stacked bar chart: Y=tool name, stacked by accepted/denied."""
+    """Vertical stacked bar chart: X=tool name, stacked by accepted/denied."""
 
     DEFAULT_CSS = """
     ToolAcceptanceChart {
@@ -92,9 +92,9 @@ class ToolAcceptanceChart(PlotextPlot):
         denied = [r["denied"] for r in rows]
 
         self.plt.stacked_bar(tool_names, [accepted, denied],
-                             labels=["accepted", "denied"], orientation="h")
+                             labels=["accepted", "denied"], orientation="v")
         self.plt.title("Tool acceptance (last 24h)")
-        self.plt.xlabel("count")
+        self.plt.ylabel("count")
         self.refresh()
 
 
@@ -308,15 +308,15 @@ class Dashboard(App):
     }
     #top-pane {
         height: 30%;
-        layout: vertical;
+        layout: horizontal;
     }
     #complexity-pane {
-        width: 100%;
-        height: 1fr;
+        width: 1fr;
+        height: 100%;
     }
     #top-right-pane {
-        width: 100%;
-        height: 1fr;
+        width: 1fr;
+        height: 100%;
     }
     #center-pane {
         height: 50%;
@@ -342,7 +342,7 @@ class Dashboard(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Vertical(id="top-pane"):
+        with Horizontal(id="top-pane"):
             yield ComplexityChart(id="complexity-pane")
             yield ToolAcceptanceChart(id="top-right-pane")
         with Vertical(id="center-pane"):
