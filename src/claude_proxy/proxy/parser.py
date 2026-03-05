@@ -139,6 +139,96 @@ def extract_request_info(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_DENIAL_PHRASES = ("user denied", "denied tool use", "interrupted by the user", "user rejected")
+
+
+def _is_denied(result: dict) -> bool:
+    if result.get("is_error"):
+        return True
+    content = result.get("content", "")
+    text = ""
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text += block.get("text", "")
+    return any(phrase in text.lower() for phrase in _DENIAL_PHRASES)
+
+
+def _input_preview(tool_input: Any) -> str | None:
+    if tool_input is None:
+        return None
+    if isinstance(tool_input, str):
+        return tool_input[:500]
+    try:
+        return json.dumps(tool_input)[:500]
+    except (TypeError, ValueError):
+        return str(tool_input)[:500]
+
+
+def extract_tool_uses(messages: list[dict]) -> list[dict]:
+    """
+    Walk messages and match tool_use blocks (in assistant turns) with
+    tool_result blocks (in subsequent user turns).
+
+    Returns a list of dicts with keys:
+      tool_use_id, tool_name, accepted, input_preview, result_preview
+    """
+    # Build id -> {name, input_preview} from all assistant tool_use blocks
+    tool_index: dict[str, dict] = {}
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        content = msg.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                tid = block.get("id", "")
+                tool_index[tid] = {
+                    "name": block.get("name", "unknown"),
+                    "input_preview": _input_preview(block.get("input")),
+                }
+
+    # Match tool_result blocks in user messages
+    results = []
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                tid = block.get("tool_use_id", "")
+                meta = tool_index.get(tid)
+                if meta is None:
+                    continue
+
+                raw_content = block.get("content", "")
+                if isinstance(raw_content, str):
+                    result_preview = raw_content[:500]
+                elif isinstance(raw_content, list):
+                    parts = []
+                    for rb in raw_content:
+                        if isinstance(rb, dict) and rb.get("type") == "text":
+                            parts.append(rb.get("text", ""))
+                    result_preview = " ".join(parts)[:500]
+                else:
+                    result_preview = None
+
+                results.append({
+                    "tool_use_id": tid,
+                    "tool_name": meta["name"],
+                    "accepted": not _is_denied(block),
+                    "input_preview": meta["input_preview"],
+                    "result_preview": result_preview,
+                })
+
+    return results
+
+
 def extract_usage_from_response(body: dict[str, Any]) -> dict[str, Any]:
     """Extract usage, stop reason, and anthropic_id from a non-streaming response body."""
     usage = body.get("usage", {})

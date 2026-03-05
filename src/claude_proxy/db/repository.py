@@ -211,3 +211,34 @@ def complexity_by_model(session: Session, days: int = 1) -> dict[str, dict[str, 
         if complexity in result:
             result[complexity][model] = cnt
     return result
+
+
+def tool_acceptance_stats(session: Session, days: int = 1) -> list[dict[str, Any]]:
+    """
+    Return per-tool accept/deny counts for the last `days` days.
+    Result: [{"tool_name": "Bash", "accepted": 10, "denied": 2}, ...]
+    """
+    from claude_proxy.db.models import ApiToolUse
+    since = datetime.now(tz=timezone.utc) - timedelta(days=days)
+    stmt = (
+        select(
+            ApiToolUse.tool_name,
+            ApiToolUse.accepted,
+            func.count(ApiToolUse.id).label("cnt"),
+        )
+        .join(ApiRequest, ApiRequest.id == ApiToolUse.request_id)
+        .where(ApiRequest.requested_at >= since)
+        .group_by(ApiToolUse.tool_name, ApiToolUse.accepted)
+    )
+    rows = session.execute(stmt).all()
+
+    totals: dict[str, dict] = {}
+    for tool_name, accepted, cnt in rows:
+        if tool_name not in totals:
+            totals[tool_name] = {"tool_name": tool_name, "accepted": 0, "denied": 0}
+        if accepted:
+            totals[tool_name]["accepted"] += cnt
+        else:
+            totals[tool_name]["denied"] += cnt
+
+    return sorted(totals.values(), key=lambda r: r["accepted"] + r["denied"], reverse=True)

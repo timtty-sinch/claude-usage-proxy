@@ -14,6 +14,7 @@ from claude_proxy.db.repository import (
     cost_over_period,
     list_requests,
     today_cost_by_model,
+    tool_acceptance_stats,
 )
 
 ChartType = Literal["bar", "scatter", "line"]
@@ -54,6 +55,39 @@ class ComplexityChart(PlotextPlot):
         self.plt.stacked_bar(tiers, series, labels=all_models, orientation="h")
         self.plt.title("Complexity by model (last 24h)")
         self.plt.xlabel("requests")
+        self.refresh()
+
+
+class ToolAcceptanceChart(PlotextPlot):
+    """Horizontal stacked bar chart: Y=tool name, stacked by accepted/denied."""
+
+    DEFAULT_CSS = """
+    ToolAcceptanceChart {
+        border: solid $primary-darken-2;
+    }
+    """
+
+    def replot(self) -> None:
+        with SyncSessionLocal() as session:
+            rows = tool_acceptance_stats(session, days=1)
+
+        self.plt.clear_data()
+
+        if not rows:
+            self.plt.bar(["no data"], [0])
+            self.plt.title("Tool acceptance (last 24h)")
+            self.plt.ylim(0, 1)
+            self.refresh()
+            return
+
+        tool_names = [r["tool_name"] for r in rows]
+        accepted = [r["accepted"] for r in rows]
+        denied = [r["denied"] for r in rows]
+
+        self.plt.stacked_bar(tool_names, [accepted, denied],
+                             labels=["accepted", "denied"], orientation="h")
+        self.plt.title("Tool acceptance (last 24h)")
+        self.plt.xlabel("count")
         self.refresh()
 
 
@@ -125,7 +159,6 @@ class Dashboard(App):
     #top-right-pane {
         width: 1fr;
         height: 100%;
-        border: solid $primary;
     }
     #center-pane {
         height: 50%;
@@ -153,7 +186,7 @@ class Dashboard(App):
         yield Header()
         with Horizontal(id="top-pane"):
             yield ComplexityChart(id="complexity-pane")
-            yield Vertical(id="top-right-pane")
+            yield ToolAcceptanceChart(id="top-right-pane")
         with Vertical(id="center-pane"):
             yield Tabs(
                 Tab("Bar charts",     id="tab-bar"),
@@ -180,6 +213,7 @@ class Dashboard(App):
 
     def _load_data(self) -> None:
         self.query_one(ComplexityChart).replot()
+        self.query_one(ToolAcceptanceChart).replot()
 
         switcher = self.query_one(ContentSwitcher)
         if switcher.current:

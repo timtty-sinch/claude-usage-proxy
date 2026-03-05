@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from claude_proxy.config import settings
 from claude_proxy.db.engine import AsyncSessionLocal
-from claude_proxy.db.models import ApiRequest, ApiUsage
+from claude_proxy.db.models import ApiRequest, ApiToolUse, ApiUsage
 from claude_proxy.pricing import calculate_cost
-from claude_proxy.proxy.parser import extract_request_info, extract_usage_from_response
+from claude_proxy.proxy.parser import extract_request_info, extract_tool_uses, extract_usage_from_response
 from claude_proxy.proxy.streaming import StreamCapture, capture_stream
 
 router = APIRouter()
@@ -71,6 +71,19 @@ async def proxy(path: str, request: Request) -> Response:
             complexity=request_info.get("complexity"),
         )
         db_session.add(db_request)
+
+        # Extract and store tool use accept/deny records from prior turns
+        if body_json:
+            for tool in extract_tool_uses(body_json.get("messages", [])):
+                db_session.add(ApiToolUse(
+                    request_id=request_id,
+                    tool_use_id=tool["tool_use_id"],
+                    tool_name=tool["tool_name"],
+                    accepted=tool["accepted"],
+                    input_preview=tool["input_preview"],
+                    result_preview=tool["result_preview"],
+                ))
+
         await db_session.commit()
 
     headers = _build_upstream_headers(request)

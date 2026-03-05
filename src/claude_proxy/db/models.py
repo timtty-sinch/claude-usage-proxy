@@ -39,6 +39,20 @@ class ApiRequest(Base):
     )
 
 
+class ApiToolUse(Base):
+    __tablename__ = "api_tool_uses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(String(36), ForeignKey("api_requests.id", ondelete="CASCADE"))
+    tool_use_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    accepted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    input_preview: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    result_preview: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    __table_args__ = (Index("ix_api_tool_uses_request_id", "request_id"),)
+
+
 class ApiUsage(Base):
     __tablename__ = "api_usage"
 
