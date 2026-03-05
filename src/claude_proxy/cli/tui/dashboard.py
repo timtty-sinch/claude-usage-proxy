@@ -10,6 +10,7 @@ from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, ContentSwitcher, DataTable, Footer, Header, Input, Label, Tab, Tabs
 
+from claude_proxy.alerts import AlertEngine
 from claude_proxy.db.engine import SyncSessionLocal
 from claude_proxy.db.repository import (
     complexity_by_model,
@@ -325,6 +326,7 @@ class Dashboard(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        self._alert_engine = AlertEngine()
         table = self.query_one("#requests-table", DataTable)
         table.add_columns("Time", "Model", "S", "Complexity", "In", "Out", "$ Cost", "ms")
         self.call_after_refresh(self._load_data)
@@ -344,6 +346,7 @@ class Dashboard(App):
                 chart.replot()
 
         with SyncSessionLocal() as session:
+            self._alert_engine.check_and_notify(self.alert_enabled, session)
             recent = list_requests(session, limit=100)
 
         table = self.query_one("#requests-table", DataTable)
