@@ -1,14 +1,22 @@
 """Textual live dashboard for Claude usage monitoring."""
 
 from datetime import timezone
+from typing import Literal
 
 from textual_plotext import PlotextPlot
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
-from textual.widgets import DataTable, Footer, Header
+from textual.containers import Grid, Horizontal, Vertical
+from textual.widgets import ContentSwitcher, DataTable, Footer, Header, Tab, Tabs
 
 from claude_proxy.db.engine import SyncSessionLocal
-from claude_proxy.db.repository import complexity_by_model, list_requests, today_cost_by_model
+from claude_proxy.db.repository import (
+    complexity_by_model,
+    cost_over_period,
+    list_requests,
+    today_cost_by_model,
+)
+
+ChartType = Literal["bar", "scatter", "line"]
 
 
 class ComplexityChart(PlotextPlot):
@@ -24,7 +32,6 @@ class ComplexityChart(PlotextPlot):
         with SyncSessionLocal() as session:
             data = complexity_by_model(session, days=1)
 
-        # Collect all models that appear in any tier
         all_models: list[str] = []
         for tier_models in data.values():
             for m in tier_models:
@@ -40,16 +47,64 @@ class ComplexityChart(PlotextPlot):
             self.refresh()
             return
 
-        # Build series: one list per model, values are counts per tier
         series = [[data[tier].get(m, 0) for tier in tiers] for m in all_models]
-
         self.plt.stacked_bar(tiers, series, labels=all_models, orientation="h")
         self.plt.title("Complexity by model (last 24h)")
         self.plt.xlabel("requests")
         self.refresh()
 
+
+class CostChart(PlotextPlot):
+    """Plots cost over a time window using bar, scatter, or line."""
+
+    DEFAULT_CSS = """
+    CostChart {
+        border: solid $primary-darken-2;
+    }
+    """
+
+    def __init__(self, title: str, hours: float, buckets: int,
+                 chart_type: ChartType = "bar", **kwargs):
+        super().__init__(**kwargs)
+        self._title = title
+        self._hours = hours
+        self._buckets = buckets
+        self._chart_type = chart_type
+
+    def replot(self) -> None:
+        with SyncSessionLocal() as session:
+            data = cost_over_period(session, self._hours, self._buckets)
+        labels = [b["label"] for b in data]
+        values = [b["cost"] for b in data]
+        x = list(range(len(labels)))
+        self.plt.clear_data()
+        if self._chart_type == "bar":
+            self.plt.bar(x, values)
+        elif self._chart_type == "scatter":
+            self.plt.scatter(x, values)
+        else:
+            self.plt.plot(x, values)
+        self.plt.xticks(x, labels)
+        self.plt.title(self._title)
+        self.plt.ylabel("$ cost")
+        self.refresh()
+
+    def on_mount(self) -> None:
+        self.replot()
+
+
+def _chart_grid(chart_type: ChartType, grid_id: str) -> Grid:
+    return Grid(
+        CostChart("Cost — last 15m", hours=0.25, buckets=15, chart_type=chart_type, id=f"{grid_id}-15m"),
+        CostChart("Cost — last 30m", hours=0.5,  buckets=15, chart_type=chart_type, id=f"{grid_id}-30m"),
+        CostChart("Cost — last 3h",  hours=3,    buckets=12, chart_type=chart_type, id=f"{grid_id}-3h"),
+        CostChart("Cost — last 3d",  hours=72,   buckets=12, chart_type=chart_type, id=f"{grid_id}-3d"),
+        id=grid_id,
+    )
+
+
 class Dashboard(App):
-    """Live dashboard: top split (chart + empty), middle cost table, bottom requests."""
+    """Live dashboard: top split (complexity chart + empty), center tabbed cost charts, bottom requests."""
 
     TITLE = "Claude Usage Proxy — Dashboard"
     CSS = """
@@ -69,9 +124,16 @@ class Dashboard(App):
         height: 100%;
         border: solid $primary;
     }
-    #middle-pane {
-        height: 20%;
-        border: solid $primary;
+    #center-pane {
+        height: 50%;
+    }
+    ContentSwitcher {
+        height: 1fr;
+    }
+    Grid {
+        layout: grid;
+        grid-size: 2 2;
+        height: 100%;
     }
     #bottom-pane {
         height: 1fr;
@@ -89,44 +151,43 @@ class Dashboard(App):
         with Horizontal(id="top-pane"):
             yield ComplexityChart(id="complexity-pane")
             yield Vertical(id="top-right-pane")
-        with Vertical(id="middle-pane"):
-            yield DataTable(id="cost-table")
+        with Vertical(id="center-pane"):
+            yield Tabs(
+                Tab("Bar charts",     id="tab-bar"),
+                Tab("Scatter charts", id="tab-scatter"),
+                Tab("Line charts",    id="tab-line"),
+            )
+            with ContentSwitcher(initial="tab-bar"):
+                yield _chart_grid("bar",     "tab-bar")
+                yield _chart_grid("scatter", "tab-scatter")
+                yield _chart_grid("line",    "tab-line")
         with Vertical(id="bottom-pane"):
             yield DataTable(id="requests-table")
         yield Footer()
 
     def on_mount(self) -> None:
-        cost_table = self.query_one("#cost-table", DataTable)
-        cost_table.add_columns("Model", "Reqs", "In Tokens", "Out Tokens", "Cost $")
-
-        req_table = self.query_one("#requests-table", DataTable)
-        req_table.add_columns("Time", "Model", "S", "Complexity", "In", "Out", "$ Cost", "ms")
-
+        table = self.query_one("#requests-table", DataTable)
+        table.add_columns("Time", "Model", "S", "Complexity", "In", "Out", "$ Cost", "ms")
         self.call_after_refresh(self._load_data)
         self.set_interval(2.0, self._load_data)
+
+    def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
+        if event.tab:
+            self.query_one(ContentSwitcher).current = event.tab.id
 
     def _load_data(self) -> None:
         self.query_one(ComplexityChart).replot()
 
+        switcher = self.query_one(ContentSwitcher)
+        if switcher.current:
+            for chart in self.query(f"#{switcher.current} CostChart"):
+                chart.replot()
+
         with SyncSessionLocal() as session:
-            cost_rows = today_cost_by_model(session)
             recent = list_requests(session, limit=100)
 
-        cost_table = self.query_one("#cost-table", DataTable)
-        cost_table.clear()
-        for row in cost_rows:
-            cost_table.add_row(
-                row["model"],
-                str(row["request_count"]),
-                f"{row['total_input_tokens']:,}",
-                f"{row['total_output_tokens']:,}",
-                f"${row['total_cost_usd']:.4f}",
-            )
-        if not cost_rows:
-            cost_table.add_row("—", "—", "—", "—", "—")
-
-        req_table = self.query_one("#requests-table", DataTable)
-        req_table.clear()
+        table = self.query_one("#requests-table", DataTable)
+        table.clear()
         for row in recent:
             ts = row["requested_at"]
             if ts and ts.tzinfo is None:
@@ -134,7 +195,7 @@ class Dashboard(App):
             time_str = ts.strftime("%H:%M:%S") if ts else "-"
             stream_icon = "~" if row["is_streaming"] else " "
             complexity = row.get("complexity") or "—"
-            req_table.add_row(
+            table.add_row(
                 time_str,
                 row["model"],
                 stream_icon,
@@ -145,7 +206,7 @@ class Dashboard(App):
                 str(row["duration_ms"]) if row["duration_ms"] is not None else "-",
             )
         if not recent:
-            req_table.add_row("—", "—", "—", "—", "—", "—", "—", "—")
+            table.add_row("—", "—", "—", "—", "—", "—", "—", "—")
 
     def action_refresh(self) -> None:
         self._load_data()
