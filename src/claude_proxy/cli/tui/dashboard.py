@@ -1,14 +1,14 @@
 """Textual live dashboard for Claude usage monitoring."""
 
 from datetime import timezone
-from typing import Literal
+from typing import Any, Literal
 
 from textual_plotext import PlotextPlot
 from textual.app import App, ComposeResult
 from textual.command import Hit, Hits, Provider
 from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, ContentSwitcher, DataTable, Footer, Header, Label, Tab, Tabs
+from textual.widgets import Button, Checkbox, ContentSwitcher, DataTable, Footer, Header, Input, Label, Tab, Tabs
 
 from claude_proxy.db.engine import SyncSessionLocal
 from claude_proxy.db.repository import (
@@ -154,7 +154,7 @@ ALERT_ITEMS: list[tuple[str, str]] = [
 ]
 
 
-class AlertConfigModal(ModalScreen[dict[str, bool]]):
+class AlertConfigModal(ModalScreen[dict[str, Any]]):
     """Popup dialog for enabling/disabling alert notifications."""
 
     DEFAULT_CSS = """
@@ -162,7 +162,7 @@ class AlertConfigModal(ModalScreen[dict[str, bool]]):
         align: center middle;
     }
     AlertConfigModal > Vertical {
-        width: 64;
+        width: 68;
         height: auto;
         border: solid $primary;
         background: $surface;
@@ -175,6 +175,19 @@ class AlertConfigModal(ModalScreen[dict[str, bool]]):
     AlertConfigModal Checkbox {
         margin-bottom: 0;
     }
+    AlertConfigModal #cost-threshold-row {
+        height: auto;
+        align: left middle;
+        margin-top: 1;
+    }
+    AlertConfigModal #cost-threshold-row Input {
+        width: 8;
+    }
+    AlertConfigModal #cost-threshold-row Label {
+        padding: 0 1;
+        height: 3;
+        content-align: left middle;
+    }
     AlertConfigModal Button {
         margin-top: 1;
         width: 100%;
@@ -183,15 +196,26 @@ class AlertConfigModal(ModalScreen[dict[str, bool]]):
 
     BINDINGS = [("escape", "close_modal", "Close")]
 
-    def __init__(self, enabled: dict[str, bool]) -> None:
+    def __init__(self, enabled: dict[str, Any]) -> None:
         super().__init__()
         self._enabled = enabled
 
     def compose(self) -> ComposeResult:
+        cost_cfg: dict[str, Any] = self._enabled.get("cost_threshold", {})
         with Vertical():
             yield Label("Alert Notifications", id="modal-title")
             for alert_id, label in ALERT_ITEMS:
                 yield Checkbox(label, value=self._enabled.get(alert_id, False), id=alert_id)
+            with Horizontal(id="cost-threshold-row"):
+                yield Checkbox(
+                    "Cost over $",
+                    value=cost_cfg.get("enabled", False),
+                    id="cost_threshold",
+                )
+                yield Input(value=str(cost_cfg.get("amount", "10")), id="cost-amount", placeholder="10.00")
+                yield Label("in last")
+                yield Input(value=str(cost_cfg.get("hours", "24")), id="cost-hours", placeholder="24")
+                yield Label("hours")
             yield Button("Close", variant="primary", id="close-btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -202,9 +226,14 @@ class AlertConfigModal(ModalScreen[dict[str, bool]]):
         self._save_and_dismiss()
 
     def _save_and_dismiss(self) -> None:
-        result = {
+        result: dict[str, Any] = {
             alert_id: self.query_one(f"#{alert_id}", Checkbox).value
             for alert_id, _ in ALERT_ITEMS
+        }
+        result["cost_threshold"] = {
+            "enabled": self.query_one("#cost_threshold", Checkbox).value,
+            "amount": self.query_one("#cost-amount", Input).value,
+            "hours": self.query_one("#cost-hours", Input).value,
         }
         self.dismiss(result)
 
@@ -234,7 +263,10 @@ class Dashboard(App):
     TITLE = "Claude Usage Proxy — Dashboard"
     COMMANDS = App.COMMANDS | {DashboardCommandProvider}
 
-    alert_enabled: dict[str, bool] = {alert_id: False for alert_id, _ in ALERT_ITEMS}
+    alert_enabled: dict[str, Any] = {
+        **{alert_id: False for alert_id, _ in ALERT_ITEMS},
+        "cost_threshold": {"enabled": False, "amount": "10", "hours": "24"},
+    }
     CSS = """
     Screen {
         layout: vertical;
@@ -336,7 +368,7 @@ class Dashboard(App):
         if not recent:
             table.add_row("—", "—", "—", "—", "—", "—", "—", "—")
 
-    def _on_alert_config(self, result: dict[str, bool] | None) -> None:
+    def _on_alert_config(self, result: dict[str, Any] | None) -> None:
         if result is not None:
             self.alert_enabled = result
 
