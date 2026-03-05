@@ -43,7 +43,10 @@ class ComplexityChart(PlotextPlot):
         self.plt.clear_data()
 
         if not all_models:
-            self.plt.title("Complexity by model (last 24h) — no data")
+            self.plt.clear_data()
+            self.plt.bar(["no data"], [0])
+            self.plt.title("Complexity by model (last 24h)")
+            self.plt.ylim(0, 1)
             self.refresh()
             return
 
