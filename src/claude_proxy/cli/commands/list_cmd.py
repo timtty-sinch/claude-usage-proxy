@@ -30,6 +30,7 @@ def requests_cmd(
     table.add_column("Time (UTC)", style="dim", no_wrap=True)
     table.add_column("Model", style="cyan")
     table.add_column("S", justify="center")
+    table.add_column("Complexity", justify="center")
     table.add_column("In", justify="right")
     table.add_column("Out", justify="right")
     table.add_column("Cost (USD)", justify="right", style="green")
@@ -46,10 +47,14 @@ def requests_cmd(
         if row["error_type"]:
             status_str = f"[red]{status_str}[/red]"
 
+        complexity = row.get("complexity") or "—"
+        complexity_styled = {"low": "[green]low[/green]", "med": "[yellow]med[/yellow]", "high": "[red]high[/red]"}.get(complexity, complexity)
+
         table.add_row(
             time_str,
             row["model"],
             stream_icon,
+            complexity_styled,
             f"{row['input_tokens']:,}",
             f"{row['output_tokens']:,}",
             f"${row['total_cost_usd']:.6f}",

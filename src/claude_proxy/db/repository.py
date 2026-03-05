@@ -41,6 +41,8 @@ def list_requests(
                 "cache_read_tokens": usage.cache_read_tokens if usage else 0,
                 "cache_creation_tokens": usage.cache_creation_tokens if usage else 0,
                 "total_cost_usd": usage.total_cost_usd if usage else 0.0,
+                "complexity": req.complexity,
+                "complexity_score": req.complexity_score,
             }
         )
     return result
@@ -145,4 +147,29 @@ def export_all(session: Session) -> list[dict[str, Any]]:
                 "total_cost_usd": usage.total_cost_usd if usage else 0.0,
             }
         )
+    return result
+
+
+def complexity_by_model(session: Session, days: int = 1) -> dict[str, dict[str, int]]:
+    """
+    Return counts of low/med/high requests per model for the last `days` days.
+    Result: {"low": {"model-a": 3, ...}, "med": {...}, "high": {...}}
+    """
+    since = datetime.now(tz=timezone.utc) - timedelta(days=days)
+    stmt = (
+        select(
+            ApiRequest.model,
+            ApiRequest.complexity,
+            func.count(ApiRequest.id).label("cnt"),
+        )
+        .where(ApiRequest.requested_at >= since)
+        .where(ApiRequest.complexity.isnot(None))
+        .group_by(ApiRequest.model, ApiRequest.complexity)
+    )
+    rows = session.execute(stmt).all()
+
+    result: dict[str, dict[str, int]] = {"low": {}, "med": {}, "high": {}}
+    for model, complexity, cnt in rows:
+        if complexity in result:
+            result[complexity][model] = cnt
     return result

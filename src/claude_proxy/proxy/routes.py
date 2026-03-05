@@ -67,6 +67,8 @@ async def proxy(path: str, request: Request) -> Response:
             system_prompt_preview=request_info.get("system_prompt_preview"),
             first_user_message_preview=request_info.get("first_user_message_preview"),
             messages_json=request_info.get("messages_json"),
+            complexity_score=request_info.get("complexity_score"),
+            complexity=request_info.get("complexity"),
         )
         db_session.add(db_request)
         await db_session.commit()
