@@ -10,7 +10,7 @@ from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, ContentSwitcher, DataTable, Footer, Header, Input, Label, Tab, Tabs
 
-from claude_proxy.alerts import AlertEngine
+from claude_proxy.alerts import AlertEngine, fire_test_notification
 from claude_proxy.db.engine import SyncSessionLocal
 from claude_proxy.db.repository import (
     complexity_by_model,
@@ -176,6 +176,15 @@ class AlertConfigModal(ModalScreen[dict[str, Any]]):
     AlertConfigModal Checkbox {
         margin-bottom: 0;
     }
+    AlertConfigModal .alert-row {
+        height: auto;
+        align: left middle;
+    }
+    AlertConfigModal .test-btn {
+        width: 8;
+        min-width: 8;
+        margin-right: 1;
+    }
     AlertConfigModal #cost-threshold-row {
         height: auto;
         align: left middle;
@@ -189,7 +198,7 @@ class AlertConfigModal(ModalScreen[dict[str, Any]]):
         height: 3;
         content-align: left middle;
     }
-    AlertConfigModal Button {
+    AlertConfigModal #close-btn {
         margin-top: 1;
         width: 100%;
     }
@@ -206,8 +215,11 @@ class AlertConfigModal(ModalScreen[dict[str, Any]]):
         with Vertical():
             yield Label("Alert Notifications", id="modal-title")
             for alert_id, label in ALERT_ITEMS:
-                yield Checkbox(label, value=self._enabled.get(alert_id, False), id=alert_id)
+                with Horizontal(classes="alert-row"):
+                    yield Button("Test", id=f"test-{alert_id}", classes="test-btn")
+                    yield Checkbox(label, value=self._enabled.get(alert_id, False), id=alert_id)
             with Horizontal(id="cost-threshold-row"):
+                yield Button("Test", id="test-cost_threshold", classes="test-btn")
                 yield Checkbox(
                     "Cost over $",
                     value=cost_cfg.get("enabled", False),
@@ -220,8 +232,30 @@ class AlertConfigModal(ModalScreen[dict[str, Any]]):
             yield Button("Close", variant="primary", id="close-btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "close-btn":
+        btn_id = event.button.id or ""
+        if btn_id == "close-btn":
             self._save_and_dismiss()
+        elif btn_id.startswith("test-"):
+            alert_id = btn_id[5:]
+            self._send_test(alert_id)
+            event.stop()
+
+    def _send_test(self, alert_id: str) -> None:
+        labels = {aid: lbl for aid, lbl in ALERT_ITEMS}
+        labels["cost_threshold"] = "Cost threshold"
+        amount = self.query_one("#cost-amount", Input).value or "10"
+        hours = self.query_one("#cost-hours", Input).value or "24"
+        messages = {
+            "cost_spike":    "5-min spend 3× above rolling average",
+            "high_request":  "Single request cost ≥ $0.10",
+            "daily_budget":  "Today's spend ≥ $5.00",
+            "request_rate":  "Request rate 3× above hourly average",
+            "cost_threshold": f"Spend ≥ ${amount} in last {hours}h",
+        }
+        fire_test_notification(
+            f"Test: {labels.get(alert_id, alert_id)}",
+            messages.get(alert_id, "Test notification"),
+        )
 
     def action_close_modal(self) -> None:
         self._save_and_dismiss()

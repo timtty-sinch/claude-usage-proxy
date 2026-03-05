@@ -17,6 +17,12 @@ except ImportError:
 _COOLDOWN = timedelta(minutes=5)
 
 
+def fire_test_notification(title: str, message: str) -> None:
+    """Fire a one-off test notification immediately, bypassing the alert engine."""
+    if _RUMPS_AVAILABLE:
+        rumps.notification("Claude Proxy", title, message)
+
+
 def _cost_in_window(session: Session, since: datetime, until: datetime) -> float:
     stmt = (
         select(func.sum(ApiUsage.total_cost_usd))
