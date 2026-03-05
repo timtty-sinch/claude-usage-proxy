@@ -20,6 +20,9 @@ from claude_proxy.db.repository import (
 ChartType = Literal["bar", "scatter", "line"]
 
 
+_MODEL_COLORS = ["cyan", "magenta", "green", "yellow", "blue", "red", "white", "orange"]
+
+
 class ComplexityChart(PlotextPlot):
     """Horizontal stacked bar chart: Y=complexity tier, stacked by model."""
 
@@ -52,7 +55,8 @@ class ComplexityChart(PlotextPlot):
             return
 
         series = [[data[tier].get(m, 0) for tier in tiers] for m in all_models]
-        self.plt.stacked_bar(tiers, series, labels=all_models, orientation="h")
+        colors = [_MODEL_COLORS[i % len(_MODEL_COLORS)] for i in range(len(all_models))]
+        self.plt.stacked_bar(tiers, series, labels=all_models, orientation="h", color=colors)
         self.plt.title("Complexity by model (last 24h)")
         self.plt.xlabel("requests")
         self.refresh()
