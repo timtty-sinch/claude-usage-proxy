@@ -48,10 +48,6 @@ class ComplexityChart(PlotextPlot):
         self.plt.xlabel("requests")
         self.refresh()
 
-    def on_mount(self) -> None:
-        self.replot()
-
-
 class Dashboard(App):
     """Live dashboard: top split (chart + empty), middle cost table, bottom requests."""
 
@@ -106,7 +102,7 @@ class Dashboard(App):
         req_table = self.query_one("#requests-table", DataTable)
         req_table.add_columns("Time", "Model", "S", "Complexity", "In", "Out", "$ Cost", "ms")
 
-        self._load_data()
+        self.call_after_refresh(self._load_data)
         self.set_interval(2.0, self._load_data)
 
     def _load_data(self) -> None:
