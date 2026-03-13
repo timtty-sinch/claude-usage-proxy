@@ -87,6 +87,7 @@ class ToolAcceptanceChart(PlotextPlot):
             self.refresh()
             return
 
+        rows = rows[:3]
         tool_names = [r["tool_name"] for r in rows]
         accepted = [r["accepted"] for r in rows]
         denied = [r["denied"] for r in rows]
